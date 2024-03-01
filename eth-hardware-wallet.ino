@@ -1,6 +1,8 @@
 #include "bitcoinfuncs.h"
 #include "menu.h"
 #include "globals.h"
+#include <WiFi.h>
+#include <WebServer.h>
 
 #define BUTTON_1 0
 #define BUTTON_2 14
@@ -9,11 +11,15 @@
 
 unsigned long failedPinTime = 0;
 
+// Webserver stuff
+const char* ssid = "Hacktest"; // Replace YOUR_SSID with your WiFi network name
+const char* password = "testhack";  // Replace YOUR_PASSWORD with your WiFi password
+WebServer server(80); // Object to represent the HTTP server
 
-int pincode = 1234;
+int pincode = 1111;
 int userPincode = 0;
 int digitPosition = 0;
-int digits[4] = {random(10), random(10), random(10), random(10)}; // Initialize with random numbers
+int digits[4] = {random(10), random(10), random(10), random(10)}; // Initialize with random numbers for security purposes
 
 bool RECEIVE_SHOWN = false;
 
@@ -30,6 +36,36 @@ enum ButtonPress {
   SINGLE_BUTTON_2,
   DOUBLE_BUTTON
 };
+
+void handleRoot() {
+  // HTML content with a form
+  String htmlContent = R"(
+  <!DOCTYPE html>
+  <html>
+  <head>
+      <title>ESP32 Form Submission</title>
+  </head>
+  <body>
+      <h2>Submit Transaction Data</h2>
+      <form action="/process" method="POST">
+          <input type="text" name="txdata" placeholder="Enter transaction data" style="width:300px;" required>
+          <input type="submit" value="Process">
+      </form>
+  </body>
+  </html>
+  )";
+  server.send(200, "text/html", htmlContent);
+}
+
+void handleProcess() {
+  if (server.hasArg("txdata")) { // Check if the textbox named 'txdata' has data
+    String txData = server.arg("txdata"); // Get the data from 'txdata'
+    Serial.println("Data received: " + txData); // Print the data to the Serial monitor
+    server.send(200, "text/plain", "Data received: " + txData); // Send confirmation back to client
+  } else {
+    server.send(200, "text/plain", "Error: No data received");
+  }
+}
 
 void displayPinCode(int digits[4], int pos) {
   tft.fillScreen(TFT_BLACK);
@@ -208,7 +244,50 @@ void processButtonPress(AppState &state, MenuOption &currentOption, ButtonPress 
 
 void setup() {
   Serial.begin(115200);
-  
+
+  Serial.println("Scanning for Wi-Fi networks...");
+
+  int n = WiFi.scanNetworks(); // Start scanning for networks
+  if (n == 0) {
+    Serial.println("No networks found.");
+  } else {
+    Serial.print(n);
+    Serial.println(" networks found:");
+    for (int i = 0; i < n; ++i) {
+      // Print SSID for each network found
+      Serial.print(i + 1);
+      Serial.print(": ");
+      Serial.println(WiFi.SSID(i));
+      delay(10);
+    }
+  }
+  Serial.println("Connecting to Wi-Fi...");
+
+  WiFi.begin(ssid, password); // Connect to the WiFi network
+
+  while (WiFi.status() != WL_CONNECTED) { // Wait for the connection to complete
+    delay(500);
+    Serial.print(".");
+  }
+
+
+
+  WiFi.begin(ssid, password); // Connect to the WiFi network
+
+  while (WiFi.status() != WL_CONNECTED) { // Wait for the connection to complete
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected.");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP()); // Print the local IP address to the Serial monitor
+
+  server.on("/", HTTP_GET, handleRoot); // Handle the root URL
+  server.on("/process", HTTP_POST, handleProcess); // Handle the form action URL
+
+  server.begin(); // Start the server
   tft.init();
   tft.fillScreen(TFT_BLACK);
   tft.setRotation(3);
@@ -227,6 +306,8 @@ void loop() {
 
   bool button1 = digitalRead(BUTTON_1);
   bool button2 = digitalRead(BUTTON_2);
+
+  server.handleClient(); // Handle client requests
 
   if (button1 == LOW && button1Prev == HIGH) {
     delay(200);
