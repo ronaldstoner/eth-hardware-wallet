@@ -4,22 +4,16 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
+// eth libraries
+#include <ethers.h>
+#include <uECC.h>
+
 #define BUTTON_1 0
 #define BUTTON_2 14
 
 #define FAILED_PIN_TIMER 30   //Seconds to lock on failed PIN 
 
 unsigned long failedPinTime = 0;
-
-// Webserver stuff
-const char* ssid = "Hacktest"; // Replace YOUR_SSID with your WiFi network name
-const char* password = "testhack";  // Replace YOUR_PASSWORD with your WiFi password
-WebServer server(80); // Object to represent the HTTP server
-
-int pincode = 1111;
-int userPincode = 0;
-int digitPosition = 0;
-int digits[4] = {random(10), random(10), random(10), random(10)}; // Initialize with random numbers for security purposes
 
 bool RECEIVE_SHOWN = false;
 
@@ -36,6 +30,39 @@ enum ButtonPress {
   SINGLE_BUTTON_2,
   DOUBLE_BUTTON
 };
+
+const struct uECC_Curve_t * curve = uECC_secp256k1();
+
+String walletAddress = "";
+uint8_t privateKey[32] = {0x07, 0x86, 0xA6, 0x16, 0x14, 0xD9, 0x6A, 0xDB, 0x71, 0x13, 0x41, 0x7C, 0x6C, 0xC3, 0x8A, 0xEB, 0x7A, 0xDC, 0x74, 0xDA, 0x5D, 0x0D, 0xBE, 0x5B, 0x8E, 0xE2, 0x5B, 0x21, 0x84, 0x6A, 0xEC, 0x63};
+
+String convertBytesKeyToHexKey(uint8_t bytesKey[], int size) {
+  String str = String();
+
+  for (byte i = 0; i < size; i = i + 1) {
+    String int2Hex = String(bytesKey[i], HEX);
+    if (int2Hex.length() ==  1) {
+      int2Hex = "0" + int2Hex;
+    }
+    str.concat(int2Hex);
+  }
+
+  return str;
+};
+
+String convertBytesToUtf8String(byte* bytes, unsigned int length) {
+    return String((char*)bytes);
+}
+
+// Webserver stuff
+const char* ssid = "Hacktest"; // Replace YOUR_SSID with your WiFi network name
+const char* password = "testhack";  // Replace YOUR_PASSWORD with your WiFi password
+WebServer server(80); // Object to represent the HTTP server
+
+int pincode = 1111;
+int userPincode = 0;
+int digitPosition = 0;
+int digits[4] = {random(10), random(10), random(10), random(10)}; // Initialize with random numbers for security purposes
 
 void handleRoot() {
   // HTML content with a form
@@ -65,6 +92,54 @@ void handleProcess() {
   } else {
     server.send(200, "text/plain", "Error: No data received");
   }
+}
+
+void viewAddress() {
+  String pk;
+  uint8_t pub[64];
+  uint8_t address[20];
+
+  pk = String(convertBytesKeyToHexKey(privateKey, 32));
+  Serial.println("priv key: " + pk);
+  delay(2000);
+
+  // Compute public key based off private key using ECDSA
+  uECC_compute_public_key(privateKey, pub, curve);
+  String pubStr = convertBytesKeyToHexKey(pub, 64);
+  Serial.println("Public Key: " + pubStr);
+  delay(2000);
+
+  // Keccak-256 hash of public key
+  uint8_t hashed[32];
+  ethers_keccak256(pub, 64, hashed);
+  String hashStr = convertBytesKeyToHexKey(hashed, 64);
+  Serial.println("Keccak-256 of Pubkey: " + hashStr);
+  delay(2000);
+
+  // Extract the last 20 bytes (160 bits) from the hashed array
+  uint8_t last20Bytes[20];
+  memcpy(last20Bytes, &hashed[12], 20);
+  String last20BytesStr = convertBytesKeyToHexKey(last20Bytes, 20);
+  Serial.println("Last 20 bytes of Keccak-256 hash of Pubkey: " + last20BytesStr);
+  delay(2000);
+   
+  // Convert the extracted bytes to lowercase
+  for (int i = 0; i < 20; i++) {
+    last20Bytes[i] = tolower(last20Bytes[i]);
+  } 
+
+  // Checksum calculation - Keccak-256 hash of the lowercase representation of the last 20 bytes
+  uint8_t checksumHash[32];
+  ethers_keccak256(last20Bytes, 20, checksumHash);
+
+  // Convert the checksum hash to a hexadecimal string
+  String checksumHashStr = convertBytesKeyToHexKey(checksumHash, 32);
+  Serial.println("Keccak-256 of lowercase representation of last 20 bytes (Checksum Hash): " + checksumHashStr);
+  delay(2000);
+
+  //walletAddress =  "0x" + String(convertBytesKeyToHexKey(address, 20));
+  //Serial.println("wallet address: " + walletAddress);
+  
 }
 
 void displayPinCode(int digits[4], int pos) {
@@ -244,6 +319,11 @@ void processButtonPress(AppState &state, MenuOption &currentOption, ButtonPress 
 
 void setup() {
   Serial.begin(115200);
+  randomSeed(analogRead(0));
+  //uECC_set_rng(&RNG);
+  viewAddress();
+
+  delay(100000);
 
   Serial.println("Scanning for Wi-Fi networks...");
 
