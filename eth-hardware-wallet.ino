@@ -1,6 +1,8 @@
 #include "bitcoinfuncs.h"
 #include "menu.h"
 #include "globals.h"
+#include "rlp.h"
+#include "utils.h"
 #include <WiFi.h>
 #include <WebServer.h>
 
@@ -12,7 +14,7 @@
 unsigned long failedPinTime = 0;
 
 // Webserver stuff
-const char* ssid = "Hacktest"; // Replace YOUR_SSID with your WiFi network name
+const char* ssid = "hacktest"; // Replace YOUR_SSID with your WiFi network name
 const char* password = "testhack";  // Replace YOUR_PASSWORD with your WiFi password
 WebServer server(80); // Object to represent the HTTP server
 
@@ -245,6 +247,8 @@ void processButtonPress(AppState &state, MenuOption &currentOption, ButtonPress 
 void setup() {
   Serial.begin(115200);
 
+  parseTx("0x");
+
   Serial.println("Scanning for Wi-Fi networks...");
 
   int n = WiFi.scanNetworks(); // Start scanning for networks
@@ -334,3 +338,28 @@ void loop() {
   button1Prev = button1;
   button2Prev = button2;
 }
+
+String parseTx(String txdata) {
+  uint8_t seq[] =
+      "f8aa018504e3b2920083030d409486fa049857e0209aa7d9e616f7eb3b3b78ecfdb080b8"
+      "44a9059cbb0000000000000000000000001febdb3539341a3005f3c5851854db7720a037"
+      "fe00000000000000000000000000000000000000000000000002c68af0bb1400001ba0fe"
+      "13bc4be8dc46e804f5b7eb6182d1f6feecdc2574eafface0ecc7f7be3516f4a042586cf9"
+      "62a3896e607214eede1a5cde727e13b62f86678efb980d9047a1017e";
+  uint8_t buffer[(sizeof(seq)) / 2] = {0};
+  hex_to_buffer(seq, sizeof(seq) - 1, buffer, (sizeof(seq) - 1) / 2);
+
+  decode_result my_resut;
+  char no_use;
+  my_resut.data = (uint8_t**) malloc(sizeof(&no_use) * DECODE_RESULT_LEN);
+  my_resut.capacity = DECODE_RESULT_LEN;
+  my_resut.size = 0;
+
+  rlp_decode(&my_resut, buffer, sizeof(buffer) / sizeof(buffer[0]));
+
+  for (size_t i = 0; i < my_resut.size; i++) {
+    Serial.printf("index:%d,data:%s\n", i, my_resut.data[i]);
+  }
+  return "";
+}
+
